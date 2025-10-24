@@ -4254,49 +4254,6 @@ void TileMapLayerEditor::_draw_overlay() {
 	Vector2 hint_distance = xform.get_scale() * tile_shape_size;
 	float scale_fading = MIN(1, (MIN(hint_distance.x, hint_distance.y) - 5) / 5);
 	if (scale_fading > 0) {
-		// Draw tiles with invalid IDs in the grid.
-		TypedArray<Vector2i> used_cells = edited_layer->get_used_cells();
-		for (int i = 0; i < used_cells.size(); i++) {
-			Vector2i coords = used_cells[i];
-			int tile_source_id = edited_layer->get_cell_source_id(coords);
-			if (tile_source_id >= 0) {
-				Vector2i tile_atlas_coords = edited_layer->get_cell_atlas_coords(coords);
-				int tile_alternative_tile = edited_layer->get_cell_alternative_tile(coords);
-
-				TileSetSource *source = nullptr;
-				if (tile_set->has_source(tile_source_id)) {
-					source = *tile_set->get_source(tile_source_id);
-				}
-
-				if (!source || !source->has_tile(tile_atlas_coords) || !source->has_alternative_tile(tile_atlas_coords, tile_alternative_tile)) {
-					// Generate a random color from the hashed identifier of the tiles.
-					Array to_hash = { tile_source_id, tile_atlas_coords, tile_alternative_tile };
-					uint32_t hash = RandomPCG(to_hash.hash()).rand();
-
-					Color color;
-					color = color.from_hsv(
-							(float)((hash >> 24) & 0xFF) / 256.0,
-							Math::lerp(0.5, 1.0, (float)((hash >> 16) & 0xFF) / 256.0),
-							Math::lerp(0.5, 1.0, (float)((hash >> 8) & 0xFF) / 256.0),
-							0.8 * scale_fading);
-
-					// Display the warning pattern.
-					Transform2D tile_xform;
-					tile_xform.set_origin(tile_set->map_to_local(coords));
-					tile_xform.set_scale(tile_shape_size);
-					tile_set->draw_tile_shape(custom_overlay, xform * tile_xform, color, true, warning_pattern_texture);
-
-					// Draw the warning icon.
-					Vector2::Axis min_axis = missing_tile_texture->get_size().min_axis_index();
-					Vector2 icon_size;
-					icon_size[min_axis] = tile_set->get_tile_size()[min_axis] / 3;
-					icon_size[(min_axis + 1) % 2] = (icon_size[min_axis] * missing_tile_texture->get_size()[(min_axis + 1) % 2] / missing_tile_texture->get_size()[min_axis]);
-					Rect2 rect = Rect2(xform.xform(tile_set->map_to_local(coords)) - (icon_size * xform.get_scale() / 2), icon_size * xform.get_scale());
-					custom_overlay->draw_texture_rect(missing_tile_texture, rect, false, Color(1, 1, 1, scale_fading));
-				}
-			}
-		}
-
 		// Fading on the border.
 		const int fading = 5;
 
@@ -4321,6 +4278,57 @@ void TileMapLayerEditor::_draw_overlay() {
 		}
 		if (displayed_rect.size.y > max_size) {
 			displayed_rect = displayed_rect.grow_individual(0, -(displayed_rect.size.y - max_size) / 2, 0, -(displayed_rect.size.y - max_size) / 2);
+		}
+
+		// Draw tiles with invalid IDs in the grid, restricted to the visible area.
+		const HashMap<Vector2i, CellData> &cells_map = edited_layer->get_tile_map_layer_data();
+		for (int x = displayed_rect.position.x; x < (displayed_rect.position.x + displayed_rect.size.x); x++) {
+			for (int y = displayed_rect.position.y; y < (displayed_rect.position.y + displayed_rect.size.y); y++) {
+				const Vector2i coords(x, y);
+				HashMap<Vector2i, CellData>::ConstIterator it = cells_map.find(coords);
+				if (!it) {
+					continue; // Empty cell.
+				}
+
+				const TileMapCell &c = it->value.cell;
+				if (c.source_id < 0) {
+					continue; // Not a used cell.
+				}
+
+				TileSetSource *source = nullptr;
+				if (tile_set->has_source(c.source_id)) {
+					source = *tile_set->get_source(c.source_id);
+				}
+				const Vector2i atlas = c.get_atlas_coords();
+				const int alternative = c.alternative_tile;
+
+				if (!source || !source->has_tile(atlas) || !source->has_alternative_tile(atlas, alternative)) {
+					// Generate a random color from the hashed identifier of the tiles.
+					Array to_hash = { c.source_id, atlas, alternative };
+					uint32_t hash = RandomPCG(to_hash.hash()).rand();
+
+					Color color;
+					color = color.from_hsv(
+							(float)((hash >> 24) & 0xFF) / 256.0,
+							Math::lerp(0.5, 1.0, (float)((hash >> 16) & 0xFF) / 256.0),
+							Math::lerp(0.5, 1.0, (float)((hash >> 8) & 0xFF) / 256.0),
+							0.8 * scale_fading);
+
+					// Display the warning pattern.
+					Transform2D tile_xform;
+					tile_xform.set_origin(tile_set->map_to_local(coords));
+					tile_xform.set_scale(tile_shape_size);
+					tile_set->draw_tile_shape(custom_overlay, xform * tile_xform, color, true, warning_pattern_texture);
+
+					// Draw the warning icon.
+					Vector2::Axis min_axis = missing_tile_texture->get_size().min_axis_index();
+					Vector2 icon_size;
+					icon_size[min_axis] = tile_set->get_tile_size()[min_axis] / 3;
+					icon_size[(min_axis + 1) % 2] = (icon_size[min_axis] * missing_tile_texture->get_size()[(min_axis + 1) % 2] / missing_tile_texture->get_size()[min_axis]);
+					Rect2 rect = Rect2(xform.xform(tile_set->map_to_local(coords)) - (icon_size * xform.get_scale() / 2), icon_size * xform.get_scale());
+					custom_overlay->draw_texture_rect(missing_tile_texture, rect, false, Color(1, 1, 1, scale_fading));
+				}
+			}
 		}
 
 		// Draw the grid.
